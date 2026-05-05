@@ -26,8 +26,11 @@ worldbet/
 │   └── WorldBet.sol        multi-asset pari-mutuel rounds + fee split + burn
 ├── scripts/deploy.js       deploy Oracle + WorldBet, register WL/BTC/ETH
 ├── oracle/index.js         CEX sampler + median + EIP-712 sign + post
+├── keeper/index.js         permissionless lockRound / settleRound driver
+├── test/                   Foundry fuzz + stateful invariant tests
 ├── frontend/               Next.js + wagmi/viem (cards, burn counter, ref link)
 ├── hardhat.config.js       seoul (103) + gwangju (10395), London EVM, 0.8.24
+├── foundry.toml            Solidity 0.8.24, fuzz=1000 / invariant=100×50
 └── README.md
 ```
 
@@ -96,7 +99,17 @@ For round `N` opened at hour `T`:
 | any            | user  | `claim(asset, N)` to collect winnings or refund                   |
 | any            | any   | `burn()` flushes `pendingBurn` to `0x...dEaD`                     |
 
-A keeper script (~30 lines on top of the oracle bot) can call `lockRound` / `settleRound` automatically.
+The included `keeper/` does this automatically: it polls every 30s, calls `lockRound` once the oracle has posted, and `settleRound` once `closeTime` passes. Lock failures while the oracle is still pending are silently retried; after the 30-min grace, the contract auto-refunds.
+
+```bash
+export RPC_URL=https://seoul.worldland.foundation
+export WORLDBET_ADDR=0x...
+export KEEPER_KEY=0x...               # any funded WL key (no privileges needed)
+node keeper/index.js
+# or: npm run keeper
+```
+
+Run it on the same host as the oracle bot or independently — both are stateless and idempotent.
 
 ## Viral launch checklist
 

@@ -3,11 +3,13 @@
 Hourly multi-asset pari-mutuel price-prediction market for **WorldLand Seoul mainnet (chainId 103)**.
 Designed to drive direct WL buy pressure, deflation via burn, and viral growth via sticky referrals.
 
+> **WLC vs WL.** Seoul mainnet's native gas coin is **WLC**. The market-listed asset on KuCoin / Gate / MEXC / HTX is the **WL** BRC-20 token (issued on Bitcoin via BNC). A future bridge will lock WL → mint WLC at 1:1, so the oracle's `WL/USD` feed is the forward-looking price of the bridged WLC. Bets are placed in WLC; the contract refers to that as "native WL" for clarity once the bridge is live. Pre-bridge, WLC has no exchange price — Seoul mainnet operates as a high-fidelity live testnet for the dApp.
+
 ## Mechanics
 
 - **Markets**: WL/USD, BTC/USD, ETH/USD
 - **Rounds**: 1 hour each, rolling — every UTC hour a new round opens for betting; the prior hour's bets go *live* once the lock price posts; the hour before that *settles* on the close price.
-- **Bets**: native WL, UP or DOWN
+- **Bets**: native WLC (= WL post-bridge), UP or DOWN
 - **Payout**: pari-mutuel — winners get back their stake plus their pro-rata slice of the loser pool. Contract has zero LP risk.
 - **Fees (3% total)**:
   - 1.0% → weekly leaderboard prize pool (`prizePool`, owner-distributed off events)
@@ -39,16 +41,41 @@ worldbet/
 ```bash
 npm install
 
-# 3-signer setup (recommended for mainnet):
-export DEPLOYER_KEY=0x...                    # funded WL on Seoul
+# 0. Verify CEX listings before anything else. Each market needs >= 2
+#    healthy venues for the median to work. Fix symbols / drop markets
+#    if any asset is short.
+npm run check:cex            # WL, BTC, ETH
+
+# 1. Three signer setup (one key per host in production):
+export DEPLOYER_KEY=0x...                    # funded WLC on Seoul
 export ORACLE_SIGNERS=0xAAA...,0xBBB...,0xCCC...
 export ORACLE_THRESHOLD=2
 
+# 2. Compile + deploy
 npx hardhat compile
-npx hardhat run scripts/deploy.js --network seoul   # or --network gwangju
+npx hardhat run scripts/deploy.js --network seoul   # mainnet
+# Gwangju is currently inactive; redirect to seoul.
 ```
 
 `deployments.json` is written next to the package with the addresses, signer set, and registered asset keys.
+
+### Conservative initial caps (post-deploy, before announcing)
+
+While the dApp is in soft-launch (pre-bridge, WLC has no exchange price), set tight caps so a bad oracle post or bug only loses bounded WLC. The owner can loosen them after monitoring the first 24 hours.
+
+```bash
+# from a hardhat console on the deployer key:
+npx hardhat console --network seoul
+> const wb = await ethers.getContractAt("WorldBet", "0x...");
+> const cap = ethers.parseEther("10");   // 10 WLC per user per round
+> for (const k of ["WL/USD","BTC/USD","ETH/USD"]) await wb.setMaxBetPerRound(ethers.id(k), cap);
+```
+
+### Deployment safety reminders (pre-bridge regime)
+
+- **No emergency pause.** Once funds are bet, only the existing refund paths can return them (one-sided pool, tie, oracle missed past grace). For a critical bug the owner can `setMaxBetPerRound(asset, 1)` to block new bets per asset; in-flight rounds still settle on whatever oracle posts. Add a real `pause()` + `emergencyRefund()` before the WL→WLC bridge goes live (= before WLC has fiat value).
+- **Audit before bridge launch.** Self-checked with 32 unit/fuzz tests + 5 stateful invariants × 5000 calls. External audit ($5–10k single-contract scope) recommended before WLC has tradeable value.
+- **Oracle must be 3-host.** Single-host combined mode with all keys is fine while WLC has no value; before bridge launch, distribute the 3 keys across separate machines and use the peer signature sidecar.
 
 ## Run the oracle bot
 
@@ -111,16 +138,31 @@ node keeper/index.js
 
 Run it on the same host as the oracle bot or independently — both are stateless and idempotent.
 
-## Viral launch checklist
+## Soft-launch checklist (pre-bridge regime)
 
-- [ ] External audit ($5–10k) before mainnet — single contract, ~370 LoC
-- [ ] 3 signer keys distributed to 3 separate hosts; rotate procedure documented
-- [ ] Lock/settle keeper running alongside oracle bot
-- [ ] Initial WL liquidity bot to bootstrap pools so the first hours are not one-sided
-- [ ] Referral link landing page + Discord/Telegram bot to mint personalized links
+WLC has no fiat price yet — Seoul mainnet acts as a high-fidelity live testnet for the dApp.
+
+- [ ] `npm run check:cex` returns >= 2 venues for WL/USD; otherwise drop the WL/USD market or fix `oracle/index.js` symbol map
+- [ ] `forge test` green (32 unit/fuzz + 5 invariants)
+- [ ] Deploy to Seoul (chainId 103) with `ORACLE_THRESHOLD=2`, 3 distinct signer addresses
+- [ ] Set `setMaxBetPerRound` to a low value (e.g. 10 WLC) on every asset before announcing
+- [ ] Oracle bot + keeper bot running; manually verify the first hourly post lands on chain
+- [ ] Dashboard / explorer link to the contract pinned in the community channel
+- [ ] First 24h: monitor for one-sided rounds, oracle misses, gas anomalies
+
+## Bridge-launch hardening (before WLC trades against fiat)
+
+These become hard requirements once a single bet has real-money value:
+
+- [ ] Add `pause()` + `emergencyRefund(asset, id)` admin functions; redo fuzz/invariants
+- [ ] External audit ($5–10k) — single contract, ~370 LoC
+- [ ] 3 signer keys on 3 separate hosts (not combined-mode); peer signature sidecar
+- [ ] Lock/settle keeper redundancy (>= 2 instances)
+- [ ] Initial liquidity bot to seed the first hours of each asset's pool
+- [ ] Referral link landing page + Discord/Telegram bot
 - [ ] Twitter thread template with the burn counter snapshot
-- [ ] Weekly leaderboard cron: read `BetPlaced` / `Claimed` events, rank by net WL, call `distributePrize(...)`
-- [ ] `setMaxBetPerRound` configured per asset for the first week, raised after telemetry
+- [ ] Weekly leaderboard cron: read `BetPlaced` / `Claimed` events, rank by net WLC, call `distributePrize(...)`
+- [ ] Loosen `setMaxBetPerRound` after telemetry stabilizes
 
 ## Decisions on record
 

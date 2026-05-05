@@ -134,7 +134,7 @@ contract WorldBetTest is Test {
 
     // ---------- payout math fuzz (UP wins) ----------
 
-    /// One UP bettor, one DOWN bettor, UP wins → UP claims stake + 100% of DOWN's net.
+    /// One UP bettor, one DOWN bettor, UP wins -> UP claims stake + 100% of DOWN's net.
     function testFuzz_Payout_UpWins(uint96 upAmt, uint96 downAmt) public {
         upAmt   = uint96(bound(upAmt,   1e15, 1e23)); // 0.001 .. 100k WL
         downAmt = uint96(bound(downAmt, 1e15, 1e23));
@@ -150,7 +150,7 @@ contract WorldBetTest is Test {
         uint128 upPool = rBefore.upPool;
         uint128 downPool = rBefore.downPool;
 
-        _settleWith(id, 100e8, 110e8); // close > lock → UP wins
+        _settleWith(id, 100e8, 110e8); // close > lock -> UP wins
 
         uint256 expectedAlice = uint256(upPool) + (uint256(upPool) * uint256(downPool)) / uint256(upPool);
         // Equivalent to upPool + downPool when alice is the only UP bettor.
@@ -226,7 +226,7 @@ contract WorldBetTest is Test {
 
         oracle.set(ASSET, id + 2, 110e8);
         _advanceToClose(id);
-        wb.settleRound(ASSET, id); // detects one-sided → refund
+        wb.settleRound(ASSET, id); // detects one-sided -> refund
 
         (WorldBet.Round memory r, ) = wb.roundView(ASSET, id, alice);
         assertEq(r.status, 4, "refund status");
@@ -245,7 +245,7 @@ contract WorldBetTest is Test {
         _settleWith(id, 100e8, 100e8); // tie
 
         (WorldBet.Round memory r, ) = wb.roundView(ASSET, id, alice);
-        assertEq(r.status, 4, "tie → refund");
+        assertEq(r.status, 4, "tie -> refund");
     }
 
     function test_Refund_OracleLockMissedPastGrace() public {
@@ -259,7 +259,7 @@ contract WorldBetTest is Test {
         wb.lockRound(ASSET, id);
 
         (WorldBet.Round memory r, ) = wb.roundView(ASSET, id, alice);
-        assertEq(r.status, 4, "lock-oracle-missed → refund");
+        assertEq(r.status, 4, "lock-oracle-missed -> refund");
     }
 
     function test_LockRevertsBeforeGrace() public {
@@ -299,7 +299,7 @@ contract WorldBetTest is Test {
         vm.prank(owner);
         wb.setMaxBetPerRound(ASSET, 0.5 ether);
 
-        // 0.5 ether bet: 97% net = 0.485 ether → under cap, OK.
+        // 0.5 ether bet: 97% net = 0.485 ether -> under cap, OK.
         _bet(alice, 0.5 ether, WorldBet.Direction.Up, address(0));
 
         // Another bet pushing total over cap should revert.

@@ -20,7 +20,7 @@ Designed to drive direct WL buy pressure, deflation via burn, and viral growth v
 ## Layout
 
 ```
-apps/worldbet/
+worldbet/
 ├── contracts/
 │   ├── PriceOracle.sol     M-of-N EIP-712 signed price feed
 │   └── WorldBet.sol        multi-asset pari-mutuel rounds + fee split + burn
@@ -34,7 +34,6 @@ apps/worldbet/
 ## Install & deploy
 
 ```bash
-cd apps/worldbet
 npm install
 
 # 3-signer setup (recommended for mainnet):

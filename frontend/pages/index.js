@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAccount, useConnect, useDisconnect, useReadContract, useWriteContract, useChainId } from "wagmi";
-import { keccak256, parseEther, formatEther, toBytes, zeroAddress } from "viem";
-import { WORLDBET_ABI } from "../lib/abi";
-import { ASSETS, WORLDBET_ADDRESS, seoul } from "../lib/chain";
+import { keccak256, parseUnits, formatUnits, toBytes, zeroAddress, maxUint256 } from "viem";
+import { WORLDBET_ABI, ERC20_ABI } from "../lib/abi";
+import { ASSETS, WORLDBET_ADDRESS, WL_TOKEN_ADDRESS, DEFAULT_CHAIN_ID } from "../lib/chain";
 
 const assetKey = (label) => keccak256(toBytes(label));
 
@@ -25,15 +25,15 @@ function useReferrer() {
   return ref;
 }
 
-function fmtWL(v) {
+function fmtWL(v, decimals = 18) {
   if (v === undefined || v === null) return "—";
-  const n = Number(formatEther(v));
+  const n = Number(formatUnits(v, decimals));
   if (n === 0) return "0";
   if (n < 0.001) return n.toExponential(2);
   return n.toLocaleString(undefined, { maximumFractionDigits: 4 });
 }
 
-function AssetCard({ label, account, ref }) {
+function AssetCard({ label, account, ref, allowance, onApprove }) {
   const key = useMemo(() => assetKey(label), [label]);
   const { data: roundId } = useReadContract({
     address: WORLDBET_ADDRESS, abi: WORLDBET_ABI, functionName: "currentRoundId",
@@ -46,14 +46,19 @@ function AssetCard({ label, account, ref }) {
   });
   const { writeContract, isPending } = useWriteContract();
 
-  const [amount, setAmount] = useState("0.1");
+  const [amount, setAmount] = useState("100");
+  const amountWei = useMemo(() => {
+    try { return parseUnits(amount || "0", 18); } catch { return 0n; }
+  }, [amount]);
+
+  const needsApprove = account && amountWei > 0n && (allowance ?? 0n) < amountWei;
+
   const placeBet = (dir) => {
-    if (!WORLDBET_ADDRESS || !account) return;
+    if (!WORLDBET_ADDRESS || !account || amountWei === 0n) return;
     writeContract({
       address: WORLDBET_ADDRESS, abi: WORLDBET_ABI,
       functionName: "bet",
-      args: [key, dir, ref || zeroAddress],
-      value: parseEther(amount || "0"),
+      args: [key, dir, ref || zeroAddress, amountWei],
     });
   };
 
@@ -83,9 +88,15 @@ function AssetCard({ label, account, ref }) {
         <span>locks in {Math.floor(secLeft / 60)}:{String(secLeft % 60).padStart(2, "0")}</span>
       </div>
       <div className="row mt12">
-        <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="WL" />
-        <button onClick={() => placeBet(0)} disabled={!account || isPending}>UP</button>
-        <button onClick={() => placeBet(1)} disabled={!account || isPending} className="down">DOWN</button>
+        <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="WL amount" />
+        {needsApprove ? (
+          <button onClick={onApprove} disabled={!account || isPending} className="approve">Approve WL</button>
+        ) : (
+          <>
+            <button onClick={() => placeBet(0)} disabled={!account || isPending}>UP</button>
+            <button onClick={() => placeBet(1)} disabled={!account || isPending} className="down">DOWN</button>
+          </>
+        )}
       </div>
       {bet && (Number(bet.upAmount) > 0 || Number(bet.downAmount) > 0) && (
         <div className="muted mt8">
@@ -166,13 +177,39 @@ export default function Home() {
   const { disconnect } = useDisconnect();
   const chainId = useChainId();
   const ref = useReferrer();
-  const wrongChain = isConnected && chainId !== seoul.id;
+  const wrongChain = isConnected && chainId !== DEFAULT_CHAIN_ID;
+
+  const { data: wlBalance } = useReadContract({
+    address: WL_TOKEN_ADDRESS, abi: ERC20_ABI, functionName: "balanceOf",
+    args: address ? [address] : undefined,
+    query: { enabled: !!address && !!WL_TOKEN_ADDRESS, refetchInterval: 10000 },
+  });
+  const { data: allowance, refetch: refetchAllowance } = useReadContract({
+    address: WL_TOKEN_ADDRESS, abi: ERC20_ABI, functionName: "allowance",
+    args: address ? [address, WORLDBET_ADDRESS] : undefined,
+    query: { enabled: !!address && !!WL_TOKEN_ADDRESS && !!WORLDBET_ADDRESS, refetchInterval: 10000 },
+  });
+
+  const { writeContract: writeApprove } = useWriteContract();
+  const onApprove = () => {
+    writeApprove({
+      address: WL_TOKEN_ADDRESS, abi: ERC20_ABI, functionName: "approve",
+      args: [WORLDBET_ADDRESS, maxUint256],
+    }, {
+      onSuccess: () => setTimeout(() => refetchAllowance(), 2000),
+    });
+  };
 
   return (
     <main>
       <header className="row between">
         <h1>WorldBet</h1>
-        <div>
+        <div className="row">
+          {isConnected && (
+            <span className="muted mr8">
+              {fmtWL(wlBalance)} WL
+            </span>
+          )}
           {isConnected ? (
             <button onClick={() => disconnect()}>{address.slice(0, 6)}…{address.slice(-4)}</button>
           ) : (
@@ -188,11 +225,22 @@ export default function Home() {
       {!WORLDBET_ADDRESS && (
         <div className="warn">Set NEXT_PUBLIC_WORLDBET_ADDRESS in .env.local before betting.</div>
       )}
-      {wrongChain && <div className="warn">Switch to WorldLand Seoul (chainId 103).</div>}
+      {wrongChain && (
+        <div className="warn">
+          Wrong chain (got {chainId}, need {DEFAULT_CHAIN_ID}). Switch your wallet to BSC mainnet.
+        </div>
+      )}
 
       <section className="grid mt16">
         {ASSETS.map((a) => (
-          <AssetCard key={a.key} label={a.key} account={address} ref={ref} />
+          <AssetCard
+            key={a.key}
+            label={a.key}
+            account={address}
+            ref={ref}
+            allowance={allowance}
+            onApprove={onApprove}
+          />
         ))}
       </section>
 
@@ -202,7 +250,7 @@ export default function Home() {
       </section>
 
       <footer className="muted mt24">
-        Pari-mutuel, native WL, hourly rounds. 3% fee = 1% prize / 0.3% ref / 1.7% burn.
+        Pari-mutuel, WL (BEP-20), hourly rounds. 3% fee = 1% prize / 0.3% ref / 1.7% burn.
       </footer>
 
       <style jsx global>{`
@@ -216,11 +264,13 @@ export default function Home() {
         .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
         .card { background: #141414; border: 1px solid #222; border-radius: 12px; padding: 16px; }
         .mt8 { margin-top: 8px; } .mt12 { margin-top: 12px; } .mt16 { margin-top: 16px; } .mt24 { margin-top: 24px; }
+        .mr8 { margin-right: 8px; }
         .muted { color: #888; font-size: 13px; }
         .mono { font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
         input { background: #0d0d0d; color: #eaeaea; border: 1px solid #2a2a2a; padding: 8px 10px; border-radius: 8px; flex: 1; }
         button { background: #2a7d2e; color: #fff; border: none; padding: 8px 14px; border-radius: 8px; cursor: pointer; font-weight: 600; }
         button.down { background: #b03030; }
+        button.approve { background: #b88500; }
         button:disabled { opacity: 0.5; cursor: not-allowed; }
         .bar { height: 6px; background: #b03030; border-radius: 3px; overflow: hidden; }
         .bar > div { height: 100%; background: #2a7d2e; }

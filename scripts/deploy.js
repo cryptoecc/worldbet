@@ -1,8 +1,10 @@
 // Deploy PriceOracle + WorldBet, register WL/USD, BTC/USD, ETH/USD.
 // Env:
-//   ORACLE_SIGNERS  comma-separated signer addresses (defaults to deployer)
+//   WL_ADDRESS        required, ERC-20 (BEP-20) WL token address.
+//                     Mainnet BSC: 0x8aaB31fbc69C92fa53f600910Cf0f215531F8239
+//   ORACLE_SIGNERS    comma-separated signer addresses (defaults to deployer)
 //   ORACLE_THRESHOLD  M of N (default 2)
-//   DEPLOYER_KEY    private key (set via hardhat network accounts)
+//   DEPLOYER_KEY      private key (set via hardhat network accounts)
 
 const fs = require("fs");
 const path = require("path");
@@ -10,10 +12,23 @@ const { ethers, network } = require("hardhat");
 
 const ASSETS = ["WL/USD", "BTC/USD", "ETH/USD"];
 
+// Pre-known WL addresses per network. Override with WL_ADDRESS env.
+const WL_BY_NETWORK = {
+  bsc:        "0x8aaB31fbc69C92fa53f600910Cf0f215531F8239", // BNB Smart Chain mainnet
+  bscTestnet: "",                                            // set via WL_ADDRESS
+  seoul:      "",                                            // set via WL_ADDRESS once bridge live
+};
+
 async function main() {
   const [deployer] = await ethers.getSigners();
   console.log(`Network: ${network.name} (chainId ${network.config.chainId})`);
   console.log(`Deployer: ${deployer.address}`);
+
+  const wlAddr = process.env.WL_ADDRESS || WL_BY_NETWORK[network.name] || "";
+  if (!ethers.isAddress(wlAddr)) {
+    throw new Error(`WL_ADDRESS not set for network ${network.name}. Set env or WL_BY_NETWORK.`);
+  }
+  console.log(`WL token:   ${wlAddr}`);
 
   const signersCsv = process.env.ORACLE_SIGNERS || deployer.address;
   const signers = signersCsv.split(",").map((s) => s.trim()).filter(Boolean);
@@ -32,7 +47,7 @@ async function main() {
   console.log(`PriceOracle deployed: ${oracleAddr}`);
 
   const WorldBet = await ethers.getContractFactory("WorldBet");
-  const wb = await WorldBet.deploy(oracleAddr, deployer.address);
+  const wb = await WorldBet.deploy(oracleAddr, wlAddr, deployer.address);
   await wb.waitForDeployment();
   const wbAddr = await wb.getAddress();
   console.log(`WorldBet deployed:    ${wbAddr}`);
@@ -46,7 +61,6 @@ async function main() {
     console.log(`  registered ${name.padEnd(8)} ${key}`);
   }
 
-  // Round-boundary alignment notice for the oracle bot.
   const now = Math.floor(Date.now() / 1000);
   const ROUND = 3600;
   const nextHour = Math.ceil(now / ROUND) * ROUND;
@@ -61,6 +75,7 @@ async function main() {
     network: network.name,
     chainId: Number(network.config.chainId),
     deployer: deployer.address,
+    wl: wlAddr,
     oracle: oracleAddr,
     worldbet: wbAddr,
     signers,

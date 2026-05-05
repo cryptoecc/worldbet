@@ -1,12 +1,14 @@
 import { http, createConfig } from "wagmi";
 import { injected } from "wagmi/connectors";
-import { seoul, gwangju } from "./chain";
+import { seoul, gwangju, bsc, bscTestnet } from "./chain";
 
 export const wagmiConfig = createConfig({
-  chains: [seoul, gwangju],
+  chains: [bsc, bscTestnet, seoul, gwangju],
   connectors: [injected()],
   transports: {
-    [seoul.id]: http(),
-    [gwangju.id]: http(),
+    [bsc.id]:        http(),
+    [bscTestnet.id]: http(),
+    [seoul.id]:      http(),
+    [gwangju.id]:    http(),
   },
 });

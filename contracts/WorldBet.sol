@@ -8,12 +8,18 @@ interface IPriceOracle {
         returns (uint128 price, uint64 timestamp, bool posted);
 }
 
+interface IERC20 {
+    function transfer(address to, uint256 amount) external returns (bool);
+    function transferFrom(address from, address to, uint256 amount) external returns (bool);
+    function balanceOf(address who) external view returns (uint256);
+}
+
 /// @title WorldBet
 /// @notice Hourly multi-asset pari-mutuel price-prediction market.
 ///         For each registered asset, every UTC hour opens a new round.
-///         Bettors stake native WL on UP or DOWN. Winners split the loser
-///         pool pro-rata. Fees: 1% prize pool, 0.3% sticky referrer rebate,
-///         1.7% accumulated for permissionless burn to 0x...dEaD.
+///         Bettors stake WL (ERC-20). Winners split the loser pool
+///         pro-rata. Fees: 1% prize pool, 0.3% sticky referrer rebate,
+///         1.7% accumulated for permissionless burn (transfer to dEaD).
 contract WorldBet {
     address public constant DEAD = 0x000000000000000000000000000000000000dEaD;
 
@@ -46,6 +52,7 @@ contract WorldBet {
     }
 
     IPriceOracle public immutable oracle;
+    IERC20 public immutable wl;
     address public owner;
 
     bytes32[] public assets;
@@ -80,10 +87,12 @@ contract WorldBet {
         _;
     }
 
-    constructor(address _oracle, address _owner) {
+    constructor(address _oracle, address _wl, address _owner) {
         require(_oracle != address(0), "WB: oracle=0");
+        require(_wl != address(0), "WB: wl=0");
         require(_owner != address(0), "WB: owner=0");
         oracle = IPriceOracle(_oracle);
+        wl = IERC20(_wl);
         owner = _owner;
     }
 
@@ -131,27 +140,31 @@ contract WorldBet {
     // -------- core --------
 
     /// @notice Place a bet on the currently-open round for `asset`.
+    ///         Caller must have approved `amount` WL to this contract.
     /// @param asset registered asset key (e.g. keccak256("WL/USD"))
     /// @param dir Up or Down
     /// @param ref optional referrer (sticky once set; zero/self ignored)
-    function bet(bytes32 asset, Direction dir, address ref) external payable {
+    /// @param amount WL stake (18 decimals)
+    function bet(bytes32 asset, Direction dir, address ref, uint256 amount) external {
         require(assetRegistered[asset], "WB: bad asset");
-        require(msg.value > 0, "WB: zero");
+        require(amount > 0, "WB: zero");
 
         uint64 id = currentRoundId();
         Round storage r = _ensureRound(asset, id);
         require(block.timestamp < r.lockTime, "WB: locked");
+
+        // Pull WL from caller. WL is vanilla ERC-20 (no fee-on-transfer).
+        require(wl.transferFrom(msg.sender, address(this), amount), "WB: transferFrom");
 
         // Sticky referrer: first non-self non-zero ref wins forever.
         if (ref != address(0) && ref != msg.sender && referrer[msg.sender] == address(0)) {
             referrer[msg.sender] = ref;
         }
 
-        uint256 amt = msg.value;
-        uint256 prizePart = (amt * FEE_BPS_PRIZE) / 10000;
-        uint256 refPart   = (amt * FEE_BPS_REFERRAL) / 10000;
-        uint256 burnPart  = (amt * (FEE_BPS_TOTAL - FEE_BPS_PRIZE - FEE_BPS_REFERRAL)) / 10000;
-        uint256 net       = amt - prizePart - refPart - burnPart;
+        uint256 prizePart = (amount * FEE_BPS_PRIZE) / 10000;
+        uint256 refPart   = (amount * FEE_BPS_REFERRAL) / 10000;
+        uint256 burnPart  = (amount * (FEE_BPS_TOTAL - FEE_BPS_PRIZE - FEE_BPS_REFERRAL)) / 10000;
+        uint256 net       = amount - prizePart - refPart - burnPart;
 
         prizePool += prizePart;
 
@@ -272,8 +285,7 @@ contract WorldBet {
         }
 
         require(payout > 0, "WB: nothing");
-        (bool ok, ) = payable(msg.sender).call{value: payout}("");
-        require(ok, "WB: send fail");
+        require(wl.transfer(msg.sender, payout), "WB: transfer");
         emit Claimed(asset, id, msg.sender, payout);
     }
 
@@ -281,19 +293,20 @@ contract WorldBet {
         uint256 amt = referralBalance[msg.sender];
         require(amt > 0, "WB: zero");
         referralBalance[msg.sender] = 0;
-        (bool ok, ) = payable(msg.sender).call{value: amt}("");
-        require(ok, "WB: send fail");
+        require(wl.transfer(msg.sender, amt), "WB: transfer");
         emit ReferralClaimed(msg.sender, amt);
     }
 
     /// @notice Anyone can trigger the deflationary burn of accumulated fees.
+    ///         WL has no public burn(); send to 0x...dEaD instead. The
+    ///         tokens are unrecoverable so circulating supply effectively
+    ///         decreases (totalSupply does not change).
     function burn() external {
         uint256 amt = pendingBurn;
         require(amt > 0, "WB: zero");
         pendingBurn = 0;
         totalBurned += amt;
-        (bool ok, ) = payable(DEAD).call{value: amt}("");
-        require(ok, "WB: send fail");
+        require(wl.transfer(DEAD, amt), "WB: transfer");
         emit Burned(amt, totalBurned);
     }
 
@@ -307,8 +320,7 @@ contract WorldBet {
         require(sum <= prizePool, "WB: > pool");
         prizePool -= sum;
         for (uint256 i = 0; i < recipients.length; i++) {
-            (bool ok, ) = payable(recipients[i]).call{value: amounts[i]}("");
-            require(ok, "WB: send fail");
+            require(wl.transfer(recipients[i], amounts[i]), "WB: transfer");
             emit PrizeDistributed(recipients[i], amounts[i]);
         }
     }
@@ -321,11 +333,5 @@ contract WorldBet {
             r.lockTime = uint64((id + 1) * ROUND_DURATION);
             r.closeTime = uint64((id + 2) * ROUND_DURATION);
         }
-    }
-
-    receive() external payable {
-        // Direct sends top up the burn accumulator. Useful for community
-        // donations / treasury seeding without affecting accounting.
-        pendingBurn += msg.value;
     }
 }

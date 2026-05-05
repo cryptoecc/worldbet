@@ -1,10 +1,11 @@
-// Trimmed WorldBet ABI for read/write calls used by the UI.
+// Trimmed WorldBet + ERC-20 ABIs for read/write calls used by the UI.
 export const WORLDBET_ABI = [
-  { type: "function", name: "bet", stateMutability: "payable",
+  { type: "function", name: "bet", stateMutability: "nonpayable",
     inputs: [
       { name: "asset", type: "bytes32" },
       { name: "dir", type: "uint8" },
       { name: "ref", type: "address" },
+      { name: "amount", type: "uint256" },
     ], outputs: [] },
   { type: "function", name: "claim", stateMutability: "nonpayable",
     inputs: [{ name: "asset", type: "bytes32" }, { name: "id", type: "uint64" }], outputs: [] },
@@ -20,6 +21,8 @@ export const WORLDBET_ABI = [
     inputs: [], outputs: [{ type: "uint256" }] },
   { type: "function", name: "referralBalance", stateMutability: "view",
     inputs: [{ type: "address" }], outputs: [{ type: "uint256" }] },
+  { type: "function", name: "wl", stateMutability: "view",
+    inputs: [], outputs: [{ type: "address" }] },
   { type: "function", name: "roundView", stateMutability: "view",
     inputs: [
       { name: "asset", type: "bytes32" },
@@ -42,4 +45,17 @@ export const WORLDBET_ABI = [
         { name: "claimed", type: "bool" },
       ]},
     ] },
+];
+
+export const ERC20_ABI = [
+  { type: "function", name: "balanceOf", stateMutability: "view",
+    inputs: [{ type: "address" }], outputs: [{ type: "uint256" }] },
+  { type: "function", name: "allowance", stateMutability: "view",
+    inputs: [{ type: "address" }, { type: "address" }], outputs: [{ type: "uint256" }] },
+  { type: "function", name: "approve", stateMutability: "nonpayable",
+    inputs: [{ type: "address" }, { type: "uint256" }], outputs: [{ type: "bool" }] },
+  { type: "function", name: "decimals", stateMutability: "view",
+    inputs: [], outputs: [{ type: "uint8" }] },
+  { type: "function", name: "symbol", stateMutability: "view",
+    inputs: [], outputs: [{ type: "string" }] },
 ];

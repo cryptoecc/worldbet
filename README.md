@@ -25,8 +25,13 @@ Designed to drive direct **WL buy pressure on PancakeSwap**, deflation via burn,
 worldbet/
 ├── contracts/
 │   ├── PriceOracle.sol     M-of-N EIP-712 signed price feed
-│   └── WorldBet.sol        multi-asset pari-mutuel rounds + fee split + burn
-├── scripts/deploy.js       deploy Oracle + WorldBet, register WL/BTC/ETH
+│   ├── WorldBet.sol        multi-asset pari-mutuel rounds + fee split + burn
+│   └── MockWL.sol          testnet-only stand-in for WL (open faucet)
+├── scripts/
+│   ├── deploy.js           deploy Oracle + WorldBet, register WL/BTC/ETH
+│   ├── deploy-mock-wl.js   testnet-only: deploy MockWL + seed deployer
+│   ├── mint-tWL.js         testnet-only: faucet helper
+│   └── check-cex.js        verify WL/BTC/ETH listings before deploy
 ├── oracle/index.js         CEX sampler + median + EIP-712 sign + post
 ├── keeper/index.js         permissionless lockRound / settleRound driver
 ├── test/                   Foundry fuzz + stateful invariant tests
@@ -36,7 +41,56 @@ worldbet/
 └── README.md
 ```
 
-## Install & deploy (BSC mainnet)
+## Install & deploy (BSC testnet — chainId 97)
+
+Run this **first** before mainnet to dry-run the full pipeline. WL is not listed on testnet, so we deploy a `MockWL` (open faucet, `tWL` symbol) and point WorldBet at it.
+
+```bash
+npm install
+
+# 0. Get testnet BNB for gas. Faucet: https://testnet.bnbchain.org/faucet-smart
+#    (paste your deployer address; ~0.5 BNB is plenty for the whole flow.)
+
+# 1. Set deployer + signers
+export DEPLOYER_KEY=0x...                        # funded testnet BNB
+export ORACLE_SIGNERS=0xAAA...,0xBBB...,0xCCC...
+export ORACLE_THRESHOLD=2
+
+# 2. Deploy MockWL (10M tWL minted to deployer for seed)
+npx hardhat run scripts/deploy-mock-wl.js --network bscTestnet
+# -> writes mock-wl.json with the address
+
+# 3. Deploy oracle + WorldBet (auto-loads mock-wl.json on testnet)
+npx hardhat run scripts/deploy.js --network bscTestnet
+
+# 4. Faucet helper — mint tWL to a tester (or yourself)
+RECIPIENT=0xTESTER AMOUNT=50000 \
+  npx hardhat run scripts/mint-tWL.js --network bscTestnet
+
+# 5. Run oracle bot + keeper
+RPC_URL=https://data-seed-prebsc-1-s1.binance.org:8545 \
+  ORACLE_ADDR=$(jq -r .oracle deployments.json) \
+  SIGNER_KEYS=0xkey1,0xkey2 \
+  node oracle/index.js &
+
+RPC_URL=https://data-seed-prebsc-1-s1.binance.org:8545 \
+  WORLDBET_ADDR=$(jq -r .worldbet deployments.json) \
+  KEEPER_KEY=0x... \
+  node keeper/index.js &
+
+# 6. Frontend (set NEXT_PUBLIC_DEFAULT_CHAIN_ID=97 + addresses from deployments.json)
+cd frontend && npm install && npm run dev
+
+# 7. Verify on BSCScan testnet (optional but useful for debugging)
+npx hardhat verify --network bscTestnet $(jq -r .oracle deployments.json) \
+  $(jq -r .deployer deployments.json) "[$(jq -r '.signers | join(\",\")' deployments.json)]" 2
+npx hardhat verify --network bscTestnet $(jq -r .worldbet deployments.json) \
+  $(jq -r .oracle deployments.json) $(jq -r .wl deployments.json) $(jq -r .deployer deployments.json)
+```
+
+Run for 24h on testnet to verify oracle posts hourly, keeper drives lock/settle, payouts are correct, and the frontend works end-to-end. Then proceed to mainnet.
+
+## Install & deploy (BSC mainnet — chainId 56)
 
 ```bash
 npm install

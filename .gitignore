@@ -6,7 +6,10 @@ cache
 *.log
 frontend/.next
 frontend/out
+
+# Per-network deployment outputs (regenerated each deploy)
 deployments.json
+mock-wl.json
 
 # Foundry
 out

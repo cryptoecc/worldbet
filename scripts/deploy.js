@@ -24,9 +24,23 @@ async function main() {
   console.log(`Network: ${network.name} (chainId ${network.config.chainId})`);
   console.log(`Deployer: ${deployer.address}`);
 
-  const wlAddr = process.env.WL_ADDRESS || WL_BY_NETWORK[network.name] || "";
+  let wlAddr = process.env.WL_ADDRESS || WL_BY_NETWORK[network.name] || "";
+
+  // Fallback: on test networks (everything except BSC mainnet), look for a
+  // MockWL deployment manifest written by scripts/deploy-mock-wl.js.
+  if (!wlAddr && network.name !== "bsc") {
+    const mockPath = path.join(__dirname, "..", "mock-wl.json");
+    if (fs.existsSync(mockPath)) {
+      const mock = JSON.parse(fs.readFileSync(mockPath, "utf8"));
+      if (mock.chainId === Number(network.config.chainId) && ethers.isAddress(mock.mockWL)) {
+        wlAddr = mock.mockWL;
+        console.log(`Using MockWL from mock-wl.json: ${wlAddr}`);
+      }
+    }
+  }
+
   if (!ethers.isAddress(wlAddr)) {
-    throw new Error(`WL_ADDRESS not set for network ${network.name}. Set env or WL_BY_NETWORK.`);
+    throw new Error(`WL_ADDRESS not set for network ${network.name}. Set env, populate WL_BY_NETWORK, or run deploy-mock-wl.js first.`);
   }
   console.log(`WL token:   ${wlAddr}`);
 

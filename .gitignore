@@ -12,3 +12,4 @@ deployments.json
 out
 lib
 broadcast
+foundry.lock

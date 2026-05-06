@@ -15,11 +15,14 @@ interface IERC20 {
 }
 
 /// @title WorldBet
-/// @notice Hourly multi-asset pari-mutuel price-prediction market.
-///         For each registered asset, every UTC hour opens a new round.
-///         Bettors stake WL (ERC-20). Winners split the loser pool
-///         pro-rata. Fees: 1% prize pool, 0.3% sticky referrer rebate,
-///         1.7% accumulated for permissionless burn (transfer to dEaD).
+/// @notice Open-source reference dApp: an hourly multi-asset pari-mutuel
+///         price-prediction market. For each registered asset, every UTC
+///         hour opens a new round. Players stake WL (ERC-20) on UP or
+///         DOWN; winners split the loser pool pro-rata. The contract
+///         holds zero LP risk and takes a disclosed 3% fee, split into a
+///         prize-pool accumulator (1%), a referrer rebate (0.3%), and a
+///         permissionless burn channel (1.7%, transfer to dEaD). Tunable
+///         parameters of an open-source contract; nothing more.
 contract WorldBet {
     address public constant DEAD = 0x000000000000000000000000000000000000dEaD;
 
@@ -297,10 +300,11 @@ contract WorldBet {
         emit ReferralClaimed(msg.sender, amt);
     }
 
-    /// @notice Anyone can trigger the deflationary burn of accumulated fees.
-    ///         WL has no public burn(); send to 0x...dEaD instead. The
-    ///         tokens are unrecoverable so circulating supply effectively
-    ///         decreases (totalSupply does not change).
+    /// @notice Anyone can flush the accumulated burn-share of fees to the
+    ///         dead address. WL has no public burn(); transfer to dEaD is
+    ///         the standard ERC-20 substitute — the tokens are
+    ///         unrecoverable, so circulating supply decreases even though
+    ///         totalSupply does not change.
     function burn() external {
         uint256 amt = pendingBurn;
         require(amt > 0, "WB: zero");

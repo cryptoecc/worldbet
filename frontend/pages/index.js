@@ -149,7 +149,7 @@ function ReferralPanel({ account }) {
   return (
     <div className="card">
       <h2>Referrals</h2>
-      <div className="muted">share your link, earn 0.3% of every bet your invitees place. sticky for life.</div>
+      <div className="muted">share your link to credit the people you invite — once a player's referrer is set on their first bet, it stays attached for that account.</div>
       {link && (
         <input
           readOnly
@@ -250,7 +250,8 @@ export default function Home() {
       </section>
 
       <footer className="muted mt24">
-        Pari-mutuel, WL (BEP-20), hourly rounds. 3% fee = 1% prize / 0.3% ref / 1.7% burn.
+        Pari-mutuel, hourly rounds, WL (BEP-20). 3% fee = 1% prize / 0.3% referrer / 1.7% burn.
+        Open-source reference dApp; play casually — not financial advice.
       </footer>
 
       <style jsx global>{`

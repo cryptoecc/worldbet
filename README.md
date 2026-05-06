@@ -1,9 +1,14 @@
 # WorldBet
 
-Hourly multi-asset pari-mutuel price-prediction market.
-Designed to drive direct **WL buy pressure on PancakeSwap**, deflation via burn, and viral growth via sticky referrals.
+An hourly pari-mutuel prediction market on the WorldLand ecosystem.
 
-> **Where to deploy.** Primary target is **BNB Smart Chain (BSC, chainId 56)** because the WL BEP-20 token (`0x8aaB31fbc69C92fa53f600910Cf0f215531F8239`) trades on KuCoin / Gate / MEXC / HTX and PancakeSwap there. WorldLand Seoul mainnet (chainId 103) is also wired but its native coin **WLC** has no exchange price until the WL → WLC bridge ships; on Seoul, WL itself would be the wrapped/bridged BEP-20 asset once available. Until then, treat Seoul as a forward-compatible deployment target rather than the launch chain.
+WorldLand was built around ECCPoW — error-correction-code proof-of-work — and after the Rockies upgrade the energy and hardware cost of mining a single WLC is, by most operators' accounting, well above the current market price of the listed WL token. WorldBet is one community attempt to give holders a more interesting on-chain use of WL than just sitting on it: a transparent, no-house, hourly market on whether WL/USD, BTC/USD, or ETH/USD will move up or down. It is meant to be played casually, not as an investment vehicle.
+
+The design is intentionally pari-mutuel — every payout is funded by other players' bets, the contract holds zero liquidity risk, and the 3% protocol fee is split between a community prize pool, a referrer rebate, and a permissionless burn. These are tunable parameters of an open-source contract; there is no house edge on top of the fee.
+
+> **Disclaimer.** WorldBet is software. Outcomes are pari-mutuel and determined by other participants' bets and a public oracle. Nothing in this repository is financial advice, an offer to sell, or a solicitation. Authors and contributors disclaim liability for any decision made on the basis of using this code. Where you live, prediction markets and on-chain wagering may be regulated or prohibited; check before participating.
+
+> **Where to deploy.** Primary target is **BNB Smart Chain (BSC, chainId 56)** because the WL BEP-20 token (`0x8aaB31fbc69C92fa53f600910Cf0f215531F8239`) is listed on KuCoin / Gate / MEXC / HTX and pairs on PancakeSwap there. WorldLand Seoul mainnet (chainId 103) is also wired and is the natural deployment target once a bridged WL exists there. Until then, treat Seoul as a forward-compatible target rather than the launch chain.
 
 ## Mechanics
 
@@ -233,11 +238,11 @@ The Seoul deployment is a forward-compatible mirror, not a substitute for the BS
 
 ## Decisions on record
 
-- **Launch chain**: BSC (chainId 56), where WL is BEP-20 and trades on PancakeSwap + 4 CEXes. WorldLand Seoul gets a parallel deploy once a bridged WL ERC-20 exists there.
+- **Initial deployment**: BSC (chainId 56), where WL is BEP-20-listed. WorldLand Seoul mirror once a bridged WL ERC-20 exists there.
 - **Oracle**: 2-of-3 EIP-712 multisig with median CEX pricing (no Chainlink/Pyth dependency).
-- **Markets**: WL, BTC, ETH launched simultaneously — diversifies user mindshare and prevents single-asset stagnation.
-- **Pari-mutuel** (not order-book or AMM): zero protocol risk, payouts capped to the pool.
-- **Burn destination**: `0x...dEaD` (WL has no public `burn()`; transfer to dEaD is the standard substitute), permissionless trigger so anyone can flush for the social-proof event.
+- **Markets**: WL, BTC, ETH offered side by side so players have multiple options.
+- **Pari-mutuel** (not order-book or AMM): zero protocol risk, payouts capped to the pool, no house edge beyond the disclosed 3% fee.
+- **Burn destination**: `0x...dEaD` (WL has no public `burn()`; transfer to the dead address is the standard ERC-20 substitute), permissionless trigger so anyone can flush.
 - **Stake currency**: WL ERC-20 (vanilla, no fee-on-transfer, 18 decimals); user approves once, then bets by amount.
 
 ## Out of scope (follow-ups)

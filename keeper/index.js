@@ -16,6 +16,8 @@
 //   POLL_MS          default 30000
 //   LOOKBACK_ROUNDS  default 4 (rounds scanned around current)
 
+require("dotenv").config();
+
 const { ethers } = require("ethers");
 
 const RPC      = process.env.RPC_URL;

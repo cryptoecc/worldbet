@@ -23,6 +23,8 @@
 //   PEER_PORT        optional, sidecar port (default 8787)
 //   POLL_MS          default 60000
 
+require("dotenv").config();
+
 const { ethers } = require("ethers");
 const http = require("http");
 const https = require("https");

@@ -33,7 +33,7 @@ function fmtWL(v, decimals = 18) {
   return n.toLocaleString(undefined, { maximumFractionDigits: 4 });
 }
 
-function AssetCard({ label, account, ref, allowance, onApprove }) {
+function AssetCard({ label, account, referrer, allowance, onApprove }) {
   const key = useMemo(() => assetKey(label), [label]);
   const { data: roundId } = useReadContract({
     address: WORLDBET_ADDRESS, abi: WORLDBET_ABI, functionName: "currentRoundId",
@@ -58,7 +58,7 @@ function AssetCard({ label, account, ref, allowance, onApprove }) {
     writeContract({
       address: WORLDBET_ADDRESS, abi: WORLDBET_ABI,
       functionName: "bet",
-      args: [key, dir, ref || zeroAddress, amountWei],
+      args: [key, dir, referrer || zeroAddress, amountWei],
     });
   };
 
@@ -237,7 +237,7 @@ export default function Home() {
             key={a.key}
             label={a.key}
             account={address}
-            ref={ref}
+            referrer={ref}
             allowance={allowance}
             onApprove={onApprove}
           />

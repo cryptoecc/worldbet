@@ -1,3 +1,4 @@
+require("dotenv").config();
 require("@nomicfoundation/hardhat-toolbox");
 
 const SEOUL_RPC      = process.env.SEOUL_RPC      || "https://seoul.worldland.foundation";

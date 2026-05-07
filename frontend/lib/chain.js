@@ -38,3 +38,4 @@ export const ASSETS = [
 export const WORLDBET_ADDRESS = process.env.NEXT_PUBLIC_WORLDBET_ADDRESS || "";
 export const WL_TOKEN_ADDRESS = process.env.NEXT_PUBLIC_WL_TOKEN_ADDRESS
   || "0x8aaB31fbc69C92fa53f600910Cf0f215531F8239"; // BSC mainnet WL
+export const ORACLE_ADDRESS   = process.env.NEXT_PUBLIC_ORACLE_ADDRESS   || "";

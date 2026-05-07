@@ -51,6 +51,18 @@ export const WORLDBET_ABI = [
     ] },
 ];
 
+export const ORACLE_ABI = [
+  { type: "function", name: "priceAt", stateMutability: "view",
+    inputs: [{ name: "asset", type: "bytes32" }, { name: "hourId", type: "uint64" }],
+    outputs: [
+      { name: "price",     type: "uint128" },
+      { name: "timestamp", type: "uint64"  },
+      { name: "posted",    type: "bool"    },
+    ] },
+  { type: "function", name: "threshold",   stateMutability: "view", inputs: [], outputs: [{ type: "uint8"    }] },
+  { type: "function", name: "signerCount", stateMutability: "view", inputs: [], outputs: [{ type: "uint256"  }] },
+];
+
 export const ERC20_ABI = [
   { type: "function", name: "balanceOf", stateMutability: "view",
     inputs: [{ type: "address" }], outputs: [{ type: "uint256" }] },

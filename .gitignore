@@ -13,6 +13,6 @@ mock-wl.json
 
 # Foundry
 out
-lib
+/lib
 broadcast
 foundry.lock

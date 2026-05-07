@@ -23,6 +23,10 @@ export const WORLDBET_ABI = [
     inputs: [{ type: "address" }], outputs: [{ type: "uint256" }] },
   { type: "function", name: "wl", stateMutability: "view",
     inputs: [], outputs: [{ type: "address" }] },
+  { type: "function", name: "lockRound", stateMutability: "nonpayable",
+    inputs: [{ name: "asset", type: "bytes32" }, { name: "id", type: "uint64" }], outputs: [] },
+  { type: "function", name: "settleRound", stateMutability: "nonpayable",
+    inputs: [{ name: "asset", type: "bytes32" }, { name: "id", type: "uint64" }], outputs: [] },
   { type: "function", name: "roundView", stateMutability: "view",
     inputs: [
       { name: "asset", type: "bytes32" },

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useAccount, useConnect, useDisconnect, useReadContract, useWriteContract, useChainId } from "wagmi";
+import { useAccount, useConnect, useDisconnect, useReadContract, useReadContracts, useWriteContract, useChainId } from "wagmi";
 import { keccak256, parseUnits, formatUnits, toBytes, zeroAddress, maxUint256 } from "viem";
 import { WORLDBET_ABI, ERC20_ABI } from "../lib/abi";
 import { ASSETS, WORLDBET_ADDRESS, WL_TOKEN_ADDRESS, DEFAULT_CHAIN_ID } from "../lib/chain";
@@ -65,7 +65,12 @@ function AssetCard({ label, account, referrer, allowance, onApprove }) {
   const round = rv?.[0];
   const bet = rv?.[1];
   const lockTs = round?.lockTime ? Number(round.lockTime) : 0;
-  const now = Math.floor(Date.now() / 1000);
+  const [now, setNow] = useState(0);
+  useEffect(() => {
+    setNow(Math.floor(Date.now() / 1000));
+    const id = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
+    return () => clearInterval(id);
+  }, []);
   const secLeft = Math.max(0, lockTs - now);
   const upPool = round?.upPool ?? 0n;
   const downPool = round?.downPool ?? 0n;
@@ -87,22 +92,177 @@ function AssetCard({ label, account, referrer, allowance, onApprove }) {
         <span>{upPct.toFixed(1)}% UP</span>
         <span>locks in {Math.floor(secLeft / 60)}:{String(secLeft % 60).padStart(2, "0")}</span>
       </div>
-      <div className="row mt12">
+      <div className="bet-row mt12">
         <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="WL amount" />
-        {needsApprove ? (
-          <button onClick={onApprove} disabled={!account || isPending} className="approve">Approve WL</button>
-        ) : (
-          <>
-            <button onClick={() => placeBet(0)} disabled={!account || isPending}>UP</button>
-            <button onClick={() => placeBet(1)} disabled={!account || isPending} className="down">DOWN</button>
-          </>
-        )}
+        <div className="bet-btns">
+          {needsApprove ? (
+            <button onClick={onApprove} disabled={!account || isPending} className="approve">Approve WL</button>
+          ) : (
+            <>
+              <button onClick={() => placeBet(0)} disabled={!account || isPending}>UP</button>
+              <button onClick={() => placeBet(1)} disabled={!account || isPending} className="down">DOWN</button>
+            </>
+          )}
+        </div>
       </div>
       {bet && (Number(bet.upAmount) > 0 || Number(bet.downAmount) > 0) && (
         <div className="muted mt8">
           your bet: UP {fmtWL(bet.upAmount)} / DOWN {fmtWL(bet.downAmount)}
           {bet.claimed ? " (claimed)" : ""}
         </div>
+      )}
+    </div>
+  );
+}
+
+// ── Bet History ───────────────────────────────────────────────────────────────
+
+const HISTORY_LOOKBACK = 24; // rounds to scan (= last 24 hours)
+const HISTORY_MAX = 5;       // rows to display
+
+const STATUS_LABEL = ["Open", "Locked", "UP Wins", "DOWN Wins", "Refund"];
+
+function dirLabel(b) {
+  const hasUp  = b.upAmount  > 0n;
+  const hasDown = b.downAmount > 0n;
+  if (hasUp && hasDown) return "UP+DOWN";
+  return hasUp ? "UP" : "DOWN";
+}
+
+function BetHistory({ account }) {
+  const { data: currentId } = useReadContract({
+    address: WORLDBET_ADDRESS, abi: WORLDBET_ABI, functionName: "currentRoundId",
+    query: { refetchInterval: 5000 },
+  });
+
+  // Build one roundView call per (asset × roundId).
+  const calls = useMemo(() => {
+    if (!account || currentId == null || !WORLDBET_ADDRESS) return [];
+    const cur = Number(currentId);
+    return ASSETS.flatMap(({ key }) =>
+      Array.from({ length: HISTORY_LOOKBACK }, (_, i) => cur - i)
+        .filter((id) => id >= 0)
+        .map((id) => ({
+          address: WORLDBET_ADDRESS, abi: WORLDBET_ABI, functionName: "roundView",
+          args: [assetKey(key), BigInt(id), account],
+        }))
+    );
+  }, [account, currentId]);
+
+  const { data: results, refetch } = useReadContracts({
+    contracts: calls,
+    query: { enabled: calls.length > 0, refetchInterval: 10000 },
+  });
+
+  // Three separate write hooks so per-row pending state is trackable via `variables`.
+  const { writeContract: writeClaim,  isPending: claimPending,  variables: claimVars  } = useWriteContract({ mutation: { onSuccess: () => refetch() } });
+  const { writeContract: writeLock,   isPending: lockPending,   variables: lockVars   } = useWriteContract({ mutation: { onSuccess: () => refetch() } });
+  const { writeContract: writeSettle, isPending: settlePending, variables: settleVars } = useWriteContract({ mutation: { onSuccess: () => refetch() } });
+
+  const [now, setNow] = useState(0);
+  useEffect(() => {
+    setNow(Math.floor(Date.now() / 1000));
+  }, []);
+
+  const rows = useMemo(() => {
+    if (!results || currentId == null) return [];
+    const cur = Number(currentId);
+    const found = [];
+
+    results.forEach((res, i) => {
+      if (res.status !== "success" || !res.result) return;
+      const [r, b] = res.result;
+      if (b.upAmount === 0n && b.downAmount === 0n) return; // no bet this round
+
+      const assetIdx   = Math.floor(i / HISTORY_LOOKBACK);
+      const roundOffset = i % HISTORY_LOOKBACK;
+      found.push({ asset: ASSETS[assetIdx], id: cur - roundOffset, r, b });
+    });
+
+    return found.sort((a, b) => b.id - a.id).slice(0, HISTORY_MAX);
+  }, [results, currentId]);
+
+  function rowStatus(r) {
+    const status   = Number(r.status);
+    const lockTime  = Number(r.lockTime);
+    const closeTime = Number(r.closeTime);
+    if (status === 0 && lockTime  > 0 && now >= lockTime)  return { label: "Overdue (Lock)",   code: status };
+    if (status === 1 && closeTime > 0 && now >= closeTime) return { label: "Overdue (Settle)", code: status };
+    return { label: STATUS_LABEL[status] ?? "Unknown", code: status };
+  }
+
+  function rowAction(asset, id, r, b) {
+    const status    = Number(r.status);
+    const lockTime  = Number(r.lockTime);
+    const closeTime = Number(r.closeTime);
+    const key       = assetKey(asset.key);
+    const idBig     = BigInt(id);
+
+    const isMyAction = (vars) => vars?.args?.[0] === key && vars?.args?.[1] === idBig;
+
+    // Claim button: winning or refund bet, not yet claimed.
+    const canClaim = !b.claimed && (
+      (status === 4 && (b.upAmount > 0n || b.downAmount > 0n)) ||
+      (status === 2 && b.upAmount  > 0n) ||
+      (status === 3 && b.downAmount > 0n)
+    );
+    if (canClaim) {
+      const mine = isMyAction(claimVars) && claimPending;
+      return <button className="action-claim" disabled={mine} onClick={() => writeClaim({ address: WORLDBET_ADDRESS, abi: WORLDBET_ABI, functionName: "claim", args: [key, idBig] })}>{mine ? "…" : "Claim"}</button>;
+    }
+
+    // Lock button: round stalled before lock.
+    if (status === 0 && lockTime > 0 && now >= lockTime) {
+      const mine = isMyAction(lockVars) && lockPending;
+      return <button className="action-lock" disabled={mine} onClick={() => writeLock({ address: WORLDBET_ADDRESS, abi: WORLDBET_ABI, functionName: "lockRound", args: [key, idBig] })}>{mine ? "…" : "Lock"}</button>;
+    }
+
+    // Settle button: round stalled after lock.
+    if (status < 2 && closeTime > 0 && now >= closeTime) {
+      const mine = isMyAction(settleVars) && settlePending;
+      return <button className="action-settle" disabled={mine} onClick={() => writeSettle({ address: WORLDBET_ADDRESS, abi: WORLDBET_ABI, functionName: "settleRound", args: [key, idBig] })}>{mine ? "…" : "Settle"}</button>;
+    }
+
+    return <span className="muted">—</span>;
+  }
+
+  if (!account) return null;
+
+  return (
+    <div className="card history-card">
+      <h2>My Bet History</h2>
+      {!results && <div className="muted mt8">Loading…</div>}
+      {results && rows.length === 0 && (
+        <div className="muted mt8">No bets found in the last {HISTORY_LOOKBACK} rounds.</div>
+      )}
+      {rows.length > 0 && (
+        <table className="history-table mt8">
+          <thead>
+            <tr>
+              <th>Asset</th>
+              <th>Round</th>
+              <th>Dir</th>
+              <th>Amount</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(({ asset, id, r, b }) => {
+              const { label, code } = rowStatus(r);
+              return (
+                <tr key={`${asset.key}|${id}`} className={`status-${code}`}>
+                  <td>{asset.label}</td>
+                  <td className="muted">#{id}</td>
+                  <td className={b.upAmount > 0n && b.downAmount === 0n ? "dir-up" : b.downAmount > 0n && b.upAmount === 0n ? "dir-down" : ""}>{dirLabel(b)}</td>
+                  <td>{fmtWL(b.upAmount + b.downAmount)} WL</td>
+                  <td className="muted">{label}{b.claimed ? " ✓" : ""}</td>
+                  <td>{rowAction(asset, id, r, b)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       )}
     </div>
   );
@@ -143,9 +303,10 @@ function ReferralPanel({ account }) {
     query: { enabled: !!account, refetchInterval: 10000 },
   });
   const { writeContract, isPending } = useWriteContract();
-  const link = typeof window !== "undefined" && account
-    ? `${window.location.origin}/?ref=${account}`
-    : "";
+  const [link, setLink] = useState("");
+  useEffect(() => {
+    setLink(account ? `${window.location.origin}/?ref=${account}` : "");
+  }, [account]);
   return (
     <div className="card">
       <h2>Referrals</h2>
@@ -172,12 +333,15 @@ function ReferralPanel({ account }) {
 }
 
 export default function Home() {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   const { address, isConnected } = useAccount();
   const { connect, connectors } = useConnect();
   const { disconnect } = useDisconnect();
   const chainId = useChainId();
   const ref = useReferrer();
-  const wrongChain = isConnected && chainId !== DEFAULT_CHAIN_ID;
+  const wrongChain = mounted && isConnected && chainId !== DEFAULT_CHAIN_ID;
 
   const { data: wlBalance } = useReadContract({
     address: WL_TOKEN_ADDRESS, abi: ERC20_ABI, functionName: "balanceOf",
@@ -205,12 +369,12 @@ export default function Home() {
       <header className="row between">
         <h1>WorldBet</h1>
         <div className="row">
-          {isConnected && (
+          {mounted && isConnected && (
             <span className="muted mr8">
               {fmtWL(wlBalance)} WL
             </span>
           )}
-          {isConnected ? (
+          {!mounted ? null : isConnected ? (
             <button onClick={() => disconnect()}>{address.slice(0, 6)}…{address.slice(-4)}</button>
           ) : (
             connectors.map((c) => (
@@ -244,6 +408,10 @@ export default function Home() {
         ))}
       </section>
 
+      <section className="mt16">
+        <BetHistory account={address} />
+      </section>
+
       <section className="grid mt16">
         <BurnCounter />
         <ReferralPanel account={address} />
@@ -272,11 +440,25 @@ export default function Home() {
         button { background: #2a7d2e; color: #fff; border: none; padding: 8px 14px; border-radius: 8px; cursor: pointer; font-weight: 600; }
         button.down { background: #b03030; }
         button.approve { background: #b88500; }
+        .bet-row { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+        .bet-row input { width: 100%; box-sizing: border-box; flex: none; }
+        .bet-btns { display: flex; gap: 8px; }
+        .bet-btns button { flex: 1; }
         button:disabled { opacity: 0.5; cursor: not-allowed; }
         .bar { height: 6px; background: #b03030; border-radius: 3px; overflow: hidden; }
         .bar > div { height: 100%; background: #2a7d2e; }
         .warn { background: #2a1a00; border: 1px solid #553; color: #fc6; padding: 10px 12px; border-radius: 8px; margin-top: 12px; }
         footer { font-size: 12px; }
+        .history-card { width: 100%; box-sizing: border-box; }
+        .history-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .history-table th { text-align: left; color: #666; font-weight: 500; padding: 4px 8px 8px; border-bottom: 1px solid #222; }
+        .history-table td { padding: 8px; border-bottom: 1px solid #1a1a1a; vertical-align: middle; }
+        .history-table tr:last-child td { border-bottom: none; }
+        .dir-up   { color: #4caf50; font-weight: 600; }
+        .dir-down { color: #e05252; font-weight: 600; }
+        button.action-claim  { background: #1565a8; font-size: 12px; padding: 5px 10px; }
+        button.action-lock   { background: #7a5c00; font-size: 12px; padding: 5px 10px; }
+        button.action-settle { background: #4a2d7a; font-size: 12px; padding: 5px 10px; }
       `}</style>
     </main>
   );

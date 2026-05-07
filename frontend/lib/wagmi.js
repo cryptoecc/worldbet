@@ -5,6 +5,7 @@ import { seoul, gwangju, bsc, bscTestnet } from "./chain";
 export const wagmiConfig = createConfig({
   chains: [bsc, bscTestnet, seoul, gwangju],
   connectors: [injected()],
+  ssr: true,
   transports: {
     [bsc.id]:        http(),
     [bscTestnet.id]: http(),
